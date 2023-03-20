@@ -1,0 +1,8 @@
+{
+  "name": "vite-vue",
+  "version": "1.0.0",
+  "scripts": {},
+  "devDependencies": {
+    "unplugin-skip": "workspace:0.0.0"
+  }
+}
