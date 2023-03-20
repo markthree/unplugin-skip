@@ -5,87 +5,95 @@ import { listLog } from './utils'
 import { createSkip } from './core'
 import { createUnplugin } from 'unplugin'
 
-export const unplugin = createUnplugin(() => {
-	const _cwd = cwd()
+interface Options {
+	log?: boolean
+}
 
-	const hits: string[] = []
-	const { useSkip, hasCacheFlag, setCacheFlag } =
-		createSkip()
+export const unplugin = createUnplugin(
+	(options: Options = {}) => {
+		const { log = false } = options
 
-	return [
-		{
-			name: 'unplugin-skip:goalkeeper',
-			enforce: 'pre',
-			vite: {
-				apply: 'build',
-				configResolved(config) {
-					config.plugins.forEach(plugin => {
-						if (!plugin.transform) {
-							return
-						}
-						const handler =
-							'handler' in plugin.transform
-								? plugin.transform.handler
-								: plugin.transform
+		const _cwd = cwd()
 
-						plugin.transform = async function (
-							code: string,
-							id: string,
-							options
-						) {
-							if (await hasCacheFlag()) {
-								const oldCode = await useSkip(id, code)
-								if (oldCode) {
-									hits.push(relative(_cwd, id))
-									return oldCode
-								}
+		const hits: string[] = []
+		const { useSkip, hasCacheFlag, setCacheFlag } =
+			createSkip()
+
+		return [
+			{
+				name: 'unplugin-skip:goalkeeper',
+				enforce: 'pre',
+				vite: {
+					apply: 'build',
+					configResolved(config) {
+						config.plugins.forEach(plugin => {
+							if (!plugin.transform) {
+								return
 							}
+							const handler =
+								'handler' in plugin.transform
+									? plugin.transform.handler
+									: plugin.transform
 
-							return handler.call(
-								this as any,
-								code,
-								id,
+							plugin.transform = async function (
+								code: string,
+								id: string,
 								options
-							)
-						}
-					})
+							) {
+								if (await hasCacheFlag()) {
+									const oldCode = await useSkip(id, code)
+									if (oldCode) {
+										hits.push(relative(_cwd, id))
+										return oldCode
+									}
+								}
+
+								return handler.call(
+									this as any,
+									code,
+									id,
+									options
+								)
+							}
+						})
+					}
 				}
-			}
-		},
-		{
-			name: 'unplugin-skip:recorder',
-			enforce: 'post',
-			vite: {
-				apply: 'build',
-				async closeBundle() {
-					await setCacheFlag()
-					if (hits.length) {
-						consola
-							.withTag('skip')
-							.withScope('unplugin-skip')
-							.log(
-								listLog(
-									Array.from(
-										new Set(
-											hits.sort(
-												(a, b) => a.length - b.length
+			},
+			{
+				name: 'unplugin-skip:recorder',
+				enforce: 'post',
+				vite: {
+					apply: 'build',
+					async closeBundle() {
+						await setCacheFlag()
+						if (log && hits.length) {
+							consola
+								.withTag('skip')
+								.withScope('unplugin-skip')
+								.log(
+									listLog(
+										Array.from(
+											new Set(
+												hits.sort(
+													(a, b) => a.length - b.length
+												)
 											)
 										)
 									)
 								)
-							)
-					}
-				},
-				transform: {
-					order: 'post',
-					async handler(code, id) {
-						await useSkip(id, code)
+						}
+					},
+					transform: {
+						order: 'post',
+						async handler(code, id) {
+							await useSkip(id, code)
+						}
 					}
 				}
 			}
-		}
-	]
-})
+		]
+	}
+)
 
 export const vitePlugin = unplugin.vite
 export const rollupPlugin = unplugin.rollup
