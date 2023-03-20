@@ -1,5 +1,5 @@
 {
-  "version": "0.0.1",
+  "version": "0.0.0",
   "name": "unplugin-skip",
   "description": "Skip all content that has been compiled once",
   "main": "./dist/index.cjs",
