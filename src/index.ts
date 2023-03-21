@@ -30,9 +30,11 @@ export const unplugin = createUnplugin(
     const hits: string[] = [];
 
     const LOAD_CACHE = join(cache, "load");
+    const IGNORE_CACHE = join(cache, 'ignore')
     const TRANSFORM_CACHE = join(cache, "transform");
 
     const loadCacheCtx = createCache(LOAD_CACHE);
+    const ignoreCacheCtx = createCache(IGNORE_CACHE)
     const transformCacheCtx = createCache(TRANSFORM_CACHE);
 
     return {
@@ -43,17 +45,20 @@ export const unplugin = createUnplugin(
         async buildStart() {
           await Promise.all([
             loadCacheCtx.initCache(),
+            ignoreCacheCtx.initCache(),
             transformCacheCtx.initCache(),
           ]);
         },
         configResolved(config) {
           config.plugins.forEach(plugin => {
+            const { name } = plugin
             // hask load
             if (plugin.load) {
               const handler = "handler" in plugin.load
                 ? plugin.load.handler
                 : plugin.load;
               plugin.load = async function (id, options) {
+
                 const getNewResult = () => {
                   return handler.call(
                     this,
@@ -66,14 +71,22 @@ export const unplugin = createUnplugin(
                   return getNewResult();
                 }
 
+
                 const [path] = normalizePath(id);
+
+                // ignore null
+                const { hasResult: ignore, update: updateIgnore } = ignoreCacheCtx.useCache(`${name}:load`, path, id)
+
+                if (ignore()) {
+                  return null
+                }
 
                 if (!(await exists(path))) {
                   return getNewResult()
                 }
 
                 const { update, isChanged, hasResult, getResult } = loadCacheCtx
-                  .useCache(plugin.name, path, id);
+                  .useCache(name, path, id);
 
                 if (hasResult() && !(await isChanged())) {
                   if (log) {
@@ -83,7 +96,10 @@ export const unplugin = createUnplugin(
                 }
 
                 const newResult = await getNewResult();
-
+                if (newResult === null) {
+                  updateIgnore(0)
+                  return null
+                }
                 update(newResult);
 
                 return newResult;
@@ -110,11 +126,19 @@ export const unplugin = createUnplugin(
                   );
                 };
 
-                const [path] = normalizePath(id);
 
                 if (isVirtualOrAssets(id)) {
                   return getNewResult();
                 }
+
+                const [path] = normalizePath(id);
+                // ignore null
+                const { hasResult: ignore, update: updateIgnore } = ignoreCacheCtx.useCache(`${name}:load`, path, id)
+
+                if (ignore()) {
+                  return null
+                }
+
 
                 if (!(await exists(path))) {
                   return getNewResult()
@@ -133,6 +157,10 @@ export const unplugin = createUnplugin(
 
                 const newResult = await getNewResult();
 
+                if (newResult === null) {
+                  updateIgnore(0)
+                  return null
+                }
                 update(newResult);
 
                 return newResult;
@@ -148,6 +176,7 @@ export const unplugin = createUnplugin(
           }
 
           await Promise.all([
+            ignoreCacheCtx.changeRef.value && ignoreCacheCtx.writeCache(),
             loadCacheCtx.changeRef.value && loadCacheCtx.writeCache(),
             transformCacheCtx.changeRef.value && transformCacheCtx.writeCache(),
           ]);
