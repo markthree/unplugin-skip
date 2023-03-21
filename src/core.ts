@@ -1,76 +1,140 @@
 import mem from "mem";
 import { hash } from "ohash";
-import { lstat } from "fs/promises";
 import { VitePlugin } from "unplugin";
-import { createStorage } from "unstorage";
-import fsDriver from "unstorage/drivers/fs";
+import fastJson from "fast-json-stringify";
+import {
+  ensureFile,
+  getMtime as _getMtime,
+  readJsonFileWithStream as _readJsonFileWithStream,
+  writeJsonFile,
+} from "file-computed";
+import { readFile } from "fs/promises";
 
-export function createSkip(cache: string) {
-  const storage = createStorage({
-    driver: fsDriver({ base: cache }),
-  });
+const getFileHash = mem(async (path) => {
+  return hash(await readFile(path));
+});
 
-  const getItem = mem((key) => {
-    return storage.getItem(key);
-  });
+const stringify = fastJson({
+  title: "unplugin-skip",
+  type: "object",
+  additionalProperties: {
+    type: "object",
+    properties: {
+      mtime: { type: "number" },
+      hash: { type: "string" },
+      mods: { },
+    },
+  },
+});
 
-  const getMtime = mem(async (path) => {
-    const { mtimeMs } = await lstat(path);
-    return mtimeMs;
-  });
+const getMtime = mem(_getMtime);
 
-  const slash = mem((path: string) => path.replace(/\\/g, "/"));
+type Result = any;
 
-  async function useSkip(
+interface Item {
+  mtime: number;
+  hash: string;
+  mods: {
+    [key: string]: Result;
+  };
+}
+
+interface CacheFile {
+  [path: string]: Item;
+}
+
+export function createCache(cache: string) {
+  let cacheFile: CacheFile;
+  async function initCache() {
+    await ensureFile(cache);
+    cacheFile = await _readJsonFileWithStream(cache) || {};
+  }
+
+  function writeCache() {
+    return writeJsonFile(cache, stringify(cacheFile));
+  }
+
+  function hasItem(path: string) {
+    return Boolean(cacheFile[path]);
+  }
+
+  function getItem(path: string) {
+    return cacheFile[path];
+  }
+
+  function setItem(path: string, item: Partial<Item> = cacheFile[path]) {
+    return cacheFile[path] = { ...cacheFile[path], ...item };
+  }
+
+  function hasMod(path: string, key: string) {
+    return Boolean(cacheFile[path]?.mods?.[key]);
+  }
+
+  function getMod(path: string, key: string) {
+    return cacheFile[path].mods[key];
+  }
+
+  function setMod(path: string, key: string, value: any) {
+    cacheFile[path].mods[key] = value;
+  }
+
+  function useCache(
     plugin: VitePlugin,
     index: number,
+    path: string,
     id: string,
   ) {
-    const [path] = slash(id).split("?");
+    const key = hash([plugin, index, id]);
 
-    let virtual = false;
-    let newMtimeMs = 0;
-    let key = hash([plugin, index, id]);
-    try {
-      newMtimeMs = await getMtime(path);
-    } catch (error) {
-      // It may be a virtual module, no real files exist
-      virtual = true;
-    }
+    let newHash: string;
+    let newMtime: number;
 
-    async function noChange() {
-      const { mtimeMs: oldMtimeMs } = (await getItem(
-        key,
-      )) as any;
-
-      return oldMtimeMs === newMtimeMs;
+    async function isChanged() {
+      const { mtime, hash } = getItem(path);
+      newMtime = await getMtime(path);
+      if (mtime === newMtime) {
+        return false;
+      }
+      newHash = await getFileHash(path);
+      if (hash === newHash) {
+        return false;
+      }
+      return true;
     }
 
     function hasResult() {
-      return storage.hasItem(key);
+      return hasMod(path, key);
     }
 
-    async function getResult() {
-      const { result } = (await getItem(key)) as any;
-      return result;
+    function getResult() {
+      return getMod(path, key);
     }
 
-    function update(result: any) {
-      return storage.setItem(key, {
-        result,
-        mtimeMs: newMtimeMs,
-      });
+    async function update(result: any) {
+      if (!hasItem(path)) {
+        setItem(path, {
+          hash: newHash ?? await getFileHash(path),
+          mtime: newMtime ?? await getMtime(path),
+          mods: { [key]: result },
+        });
+        return;
+      }
+      if (!hasMod(path, key)) {
+        setItem(path, {
+          hash: newHash ?? await getFileHash(path),
+          mtime: newMtime ?? await getMtime(path),
+        });
+        setMod(path, key, result);
+      }
     }
 
     return {
-      path,
       update,
-      virtual,
-      noChange,
+      isChanged,
       hasResult,
       getResult,
     };
   }
 
-  return useSkip;
+  return { useCache, initCache, writeCache };
 }

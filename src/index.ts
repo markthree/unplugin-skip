@@ -1,9 +1,14 @@
+import mem from "mem";
 import { join } from "path";
 import consola from "consola";
-import { listLog } from "./utils";
-import { createSkip } from "./core";
+import { lstat } from "fs/promises";
+import { createCache } from "./core";
 import { createUnplugin } from "unplugin";
 import { DEFAULT_CACHE } from "./constant";
+import { listLog, normalizePath } from "./utils";
+import { exists as _exists } from "file-computed"
+
+const exists = mem(_exists);
 
 interface Options {
   log?: boolean;
@@ -18,14 +23,20 @@ export const unplugin = createUnplugin(
     const LOAD_CACHE = join(cache, "load");
     const TRANSFORM_CACHE = join(cache, "transform");
 
-    const useLoadSkip = createSkip(LOAD_CACHE);
-    const useTransformSkip = createSkip(TRANSFORM_CACHE);
+    const loadCacheCtx = createCache(LOAD_CACHE);
+    const transformCacheCtx = createCache(TRANSFORM_CACHE);
 
     return {
       name: "unplugin-skip:goalkeeper",
       enforce: "pre",
       vite: {
         apply: "build",
+        async buildStart() {
+          await Promise.all([
+            loadCacheCtx.initCache(),
+            transformCacheCtx.initCache(),
+          ]);
+        },
         configResolved(config) {
           config.plugins.forEach((plugin, index) => {
             // hask load
@@ -46,35 +57,27 @@ export const unplugin = createUnplugin(
                   return getNewResult();
                 }
 
-                const {
-                  path,
-                  update,
-                  virtual,
-                  noChange,
-                  hasResult,
-                  getResult,
-                } = await useLoadSkip(
-                  plugin,
-                  index,
-                  id,
-                );
+                const [path] = normalizePath(id);
 
-                if (!virtual) {
-                  if (
-                    (await hasResult()) &&
-                    await noChange()
-                  ) {
-                    if (log) {
-                      hits.push(path);
-                    }
-                    return getResult();
+                // Could be a virtual module
+                if (!(await exists(path))) {
+                  return getNewResult();
+                }
+
+                const { update, isChanged, hasResult, getResult } = loadCacheCtx
+                  .useCache(plugin, index, path, id);
+
+                if (hasResult() && !(await isChanged())) {
+                  if (log) {
+                    hits.push(`load: ${path}`)
                   }
+                  return getResult();
                 }
 
                 const newResult = await getNewResult();
-                if (!virtual && newResult) {
-                  update(newResult);
-                }
+
+                await update(newResult);
+
                 return newResult;
               };
             }
@@ -99,46 +102,44 @@ export const unplugin = createUnplugin(
                   );
                 };
 
-                const {
-                  path,
-                  update,
-                  virtual,
-                  noChange,
-                  hasResult,
-                  getResult,
-                } = await useTransformSkip(
-                  plugin,
-                  index,
-                  id,
-                );
+                const [path] = normalizePath(id);
 
-                if (!virtual) {
-                  if (
-                    (await hasResult()) &&
-                    await noChange()
-                  ) {
-                    if (log) {
-                      hits.push(path);
-                    }
-                    return getResult();
+                // Could be a virtual module
+                if (!(await exists(path))) {
+                  return getNewResult();
+                }
+
+
+                const { update, isChanged, hasResult, getResult } = transformCacheCtx
+                  .useCache(plugin, index, path, id);
+
+                if (hasResult() && !(await isChanged())) {
+                  if (log) {
+                    hits.push(`transform: ${path}`)
                   }
+                  return getResult();
                 }
 
                 const newResult = await getNewResult();
-                if (!virtual && newResult) {
-                  update(newResult);
-                }
+
+                await update(newResult);
+
                 return newResult;
               };
             }
           });
         },
-        closeBundle() {
+        async closeBundle() {
           if (log && hits.length > 0) {
             consola.withScope("unplugin-skip").withTag("hit").log(
               listLog(hits.sort((a, b) => a.length - b.length)),
             );
           }
+
+          await Promise.all([
+            loadCacheCtx.writeCache(),
+            transformCacheCtx.writeCache(),
+          ]);
         },
       },
     };
