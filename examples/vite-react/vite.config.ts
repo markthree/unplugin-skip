@@ -4,5 +4,5 @@ import { vitePlugin as Skip } from 'unplugin-skip'
 
 // https://vitejs.dev/config/
 export default defineConfig({
-	plugins: [react(), Skip({ log: true })]
+	plugins: [react(), Skip({ log: false })]
 })

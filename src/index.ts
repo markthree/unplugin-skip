@@ -52,15 +52,15 @@ export const unplugin = createUnplugin(
                   );
                 };
 
-                if (id.includes("assets")) {
+                if (id.includes("assets") || id.startsWith('\x00')) {
                   return getNewResult();
                 }
 
+
                 const [path] = normalizePath(id);
 
-                // Could be a virtual module
                 if (!(await exists(path))) {
-                  return getNewResult();
+                  return getNewResult()
                 }
 
                 const { update, isChanged, hasResult, getResult } = loadCacheCtx
@@ -103,9 +103,12 @@ export const unplugin = createUnplugin(
 
                 const [path] = normalizePath(id);
 
-                // Could be a virtual module
-                if (!(await exists(path))) {
+                if (id.startsWith('\x00')) {
                   return getNewResult();
+                }
+
+                if (!(await exists(path))) {
+                  return getNewResult()
                 }
 
 
