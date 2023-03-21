@@ -1,11 +1,10 @@
-import mem from "mem";
-import { join } from "path";
-import consola from "consola";
-import { lstat } from "fs/promises";
-import { createCache } from "./core";
-import { createUnplugin } from "unplugin";
-import { DEFAULT_CACHE } from "./constant";
-import { listLog, normalizePath } from "./utils";
+import mem from "mem"
+import { join } from "path"
+import consola from "consola"
+import { createCache } from "./core"
+import { createUnplugin } from "unplugin"
+import { DEFAULT_CACHE } from "./constant"
+import { listLog, normalizePath } from "./utils"
 import { exists as _exists } from "file-computed"
 
 const exists = mem(_exists);
