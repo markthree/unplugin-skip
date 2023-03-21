@@ -1,7 +1,8 @@
 import { defineConfig } from 'vite'
-import Vue from '@vitejs/plugin-vue'
+import react from '@vitejs/plugin-react'
 import { vitePlugin as Skip } from 'unplugin-skip'
 
+// https://vitejs.dev/config/
 export default defineConfig({
-	plugins: [Skip({ log: true }), Vue()]
+	plugins: [react(), Skip({ log: true })]
 })

@@ -1,55 +1,76 @@
-import { cwd } from 'process'
-import { hash } from 'ohash'
-import { resolve } from 'path'
-import { existsSync } from 'fs'
-import { createStorage } from 'unstorage'
-import { checkMtime, getMtime } from './fs'
-import fsDriver from 'unstorage/drivers/fs'
-import { DEFAULT_CACHE, CACHE_FLAG } from './constant'
+import mem from "mem";
+import { hash } from "ohash";
+import { lstat } from "fs/promises";
+import { VitePlugin } from "unplugin";
+import { createStorage } from "unstorage";
+import fsDriver from "unstorage/drivers/fs";
 
-export function createSkip(
-	cache: string = resolve(cwd(), DEFAULT_CACHE)
-) {
-	const storage = createStorage({
-		driver: fsDriver({ base: cache })
-	})
+export function createSkip(cache: string) {
+  const storage = createStorage({
+    driver: fsDriver({ base: cache }),
+  });
 
-	function hasCacheFlag() {
-		return storage.hasItem(CACHE_FLAG)
-	}
+  const getItem = mem((key) => {
+    return storage.getItem(key);
+  });
 
-	function setCacheFlag() {
-		return storage.setItem(CACHE_FLAG, 0)
-	}
+  const getMtime = mem(async (path) => {
+    const { mtimeMs } = await lstat(path);
+    return mtimeMs;
+  });
 
-	async function useSkip(id: string, code: string) {
-		const [path, query] = id.split('?')
-		if (!existsSync(path)) {
-			return null
-		}
+  const slash = mem((path: string) => path.replace(/\\/g, "/"));
 
-		const key = hash(path + query)
-		if (!(await storage.hasItem(key))) {
-			await storage.setItem(key, code)
-			await storage.setMeta(key, {
-				mtime: await getMtime(path)
-			})
-			return null
-		}
+  async function useSkip(
+    plugin: VitePlugin,
+    index: number,
+    id: string,
+  ) {
+    const [path] = slash(id).split("?");
 
-		const newMtime = await getMtime(path)
+    let virtual = false;
+    let newMtimeMs = 0;
+    let key = hash([plugin, index, id]);
+    try {
+      newMtimeMs = await getMtime(path);
+    } catch (error) {
+      // It may be a virtual module, no real files exist
+      virtual = true;
+    }
 
-		const { mtime: oldMtime } = await storage.getMeta(key)
-		if (checkMtime(newMtime, oldMtime!)) {
-			return storage.getItem(key) as Promise<string>
-		}
+    async function noChange() {
+      const { mtimeMs: oldMtimeMs } = (await getItem(
+        key,
+      )) as any;
 
-		return null
-	}
+      return oldMtimeMs === newMtimeMs;
+    }
 
-	return {
-		useSkip,
-		setCacheFlag,
-		hasCacheFlag
-	}
+    function hasResult() {
+      return storage.hasItem(key);
+    }
+
+    async function getResult() {
+      const { result } = (await getItem(key)) as any;
+      return result;
+    }
+
+    function update(result: any) {
+      return storage.setItem(key, {
+        result,
+        mtimeMs: newMtimeMs,
+      });
+    }
+
+    return {
+      path,
+      update,
+      virtual,
+      noChange,
+      hasResult,
+      getResult,
+    };
+  }
+
+  return useSkip;
 }
