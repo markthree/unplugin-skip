@@ -45,7 +45,9 @@ export function createCache(cache: string) {
   const changeRef = { value: false }
 
   function writeCache() {
-    return writeJsonFile(cache, stringify(cacheFile));
+    if (changeRef.value) {
+      return writeJsonFile(cache, stringify(cacheFile));
+    }
   }
 
   function hasItem(path: string) {
@@ -54,10 +56,6 @@ export function createCache(cache: string) {
 
   function getItem(path: string) {
     return cacheFile[path];
-  }
-
-  function setItem(path: string, item: Partial<Item> = cacheFile[path]) {
-    return cacheFile[path] = { ...cacheFile[path], ...item };
   }
 
   function hasMod(path: string, key: string) {
@@ -95,20 +93,19 @@ export function createCache(cache: string) {
       return getMod(path, key);
     }
 
+    async function findMtime() {
+      return newMtime || cacheFile[path]?.mtime || await getMtime(path)
+    }
+
     async function update(result: any) {
       changeRef.value = true
       if (!hasItem(path)) {
-        setItem(path, {
-          mtime: newMtime || cacheFile[path]?.mtime || await getMtime(path),
-          mods: { [key]: result },
-        });
+        cacheFile[path] = { mtime: await findMtime(), mods: { [key]: result } }
         return;
       }
       if (!hasMod(path, key)) {
-        setItem(path, {
-          mtime: newMtime || cacheFile[path]?.mtime || await getMtime(path)
-        });
         setMod(path, key, result);
+        cacheFile[path].mtime = await findMtime()
       }
     }
 
@@ -120,5 +117,5 @@ export function createCache(cache: string) {
     };
   }
 
-  return { useCache, initCache, writeCache, changeRef };
+  return { useCache, initCache, writeCache };
 }

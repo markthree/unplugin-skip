@@ -96,9 +96,9 @@ export const unplugin = createUnplugin(
                 }
 
                 const newResult = await getNewResult();
-                if (newResult === null) {
+                if (newResult === null || newResult === undefined) {
                   updateIgnore(0)
-                  return null
+                  return newResult
                 }
                 update(newResult);
 
@@ -133,7 +133,7 @@ export const unplugin = createUnplugin(
 
                 const [path] = normalizePath(id);
                 // ignore null
-                const { hasResult: ignore, update: updateIgnore } = ignoreCacheCtx.useCache(`${name}:load`, path, id)
+                const { hasResult: ignore, update: updateIgnore } = ignoreCacheCtx.useCache(`${name}:transform`, path, id)
 
                 if (ignore()) {
                   return null
@@ -146,7 +146,7 @@ export const unplugin = createUnplugin(
 
 
                 const { update, isChanged, hasResult, getResult } = transformCacheCtx
-                  .useCache(plugin.name, path, id);
+                  .useCache(name, path, id);
 
                 if (hasResult() && !(await isChanged())) {
                   if (log) {
@@ -157,10 +157,11 @@ export const unplugin = createUnplugin(
 
                 const newResult = await getNewResult();
 
-                if (newResult === null) {
+                if (newResult === null || newResult === undefined) {
                   updateIgnore(0)
-                  return null
+                  return newResult
                 }
+
                 update(newResult);
 
                 return newResult;
@@ -175,10 +176,11 @@ export const unplugin = createUnplugin(
             );
           }
 
+
           await Promise.all([
-            ignoreCacheCtx.changeRef.value && ignoreCacheCtx.writeCache(),
-            loadCacheCtx.changeRef.value && loadCacheCtx.writeCache(),
-            transformCacheCtx.changeRef.value && transformCacheCtx.writeCache(),
+            ignoreCacheCtx.writeCache(),
+            loadCacheCtx.writeCache(),
+            transformCacheCtx.writeCache(),
           ]);
         },
       },
