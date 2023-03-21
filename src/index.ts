@@ -9,9 +9,15 @@ import { exists as _exists } from "file-computed"
 
 const exists = mem(_exists);
 
+// TODO
+async function defaultRefresh() {
+  return false
+}
+
 interface Options {
   log?: boolean;
   cache?: string;
+  refresh?: typeof defaultRefresh
 }
 
 function isVirtualOrAssets(id: string) {
@@ -143,7 +149,7 @@ export const unplugin = createUnplugin(
 
           await Promise.all([
             loadCacheCtx.changeRef.value && loadCacheCtx.writeCache(),
-            loadCacheCtx.changeRef.value && transformCacheCtx.writeCache(),
+            transformCacheCtx.changeRef.value && transformCacheCtx.writeCache(),
           ]);
         },
       },
