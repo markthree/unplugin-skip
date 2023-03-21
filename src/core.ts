@@ -1,6 +1,4 @@
 import mem from "mem";
-import { hash } from "ohash";
-import { VitePlugin } from "unplugin";
 import fastJson from "fast-json-stringify";
 import {
   ensureFile,
@@ -8,11 +6,7 @@ import {
   readJsonFileWithStream as _readJsonFileWithStream,
   writeJsonFile,
 } from "file-computed";
-import { readFile } from "fs/promises";
 
-const getFileHash = mem(async (path) => {
-  return hash(await readFile(path));
-});
 
 const stringify = fastJson({
   title: "unplugin-skip",
@@ -21,8 +15,7 @@ const stringify = fastJson({
     type: "object",
     properties: {
       mtime: { type: "number" },
-      hash: { type: "string" },
-      mods: { },
+      mods: {},
     },
   },
 });
@@ -33,7 +26,6 @@ type Result = any;
 
 interface Item {
   mtime: number;
-  hash: string;
   mods: {
     [key: string]: Result;
   };
@@ -49,6 +41,8 @@ export function createCache(cache: string) {
     await ensureFile(cache);
     cacheFile = await _readJsonFileWithStream(cache) || {};
   }
+
+  const changeRef = { value: false }
 
   function writeCache() {
     return writeJsonFile(cache, stringify(cacheFile));
@@ -79,27 +73,18 @@ export function createCache(cache: string) {
   }
 
   function useCache(
-    plugin: VitePlugin,
-    index: number,
+    name: string,
     path: string,
     id: string,
   ) {
-    const key = hash([plugin, index, id]);
+    const key = `${name}:${id}`
 
-    let newHash: string;
     let newMtime: number;
 
     async function isChanged() {
-      const { mtime, hash } = getItem(path);
+      const { mtime } = getItem(path);
       newMtime = await getMtime(path);
-      if (mtime === newMtime) {
-        return false;
-      }
-      newHash = await getFileHash(path);
-      if (hash === newHash) {
-        return false;
-      }
-      return true;
+      return newMtime !== mtime
     }
 
     function hasResult() {
@@ -111,18 +96,17 @@ export function createCache(cache: string) {
     }
 
     async function update(result: any) {
+      changeRef.value = true
       if (!hasItem(path)) {
         setItem(path, {
-          hash: newHash ?? await getFileHash(path),
-          mtime: newMtime ?? await getMtime(path),
+          mtime: newMtime || cacheFile[path]?.mtime || await getMtime(path),
           mods: { [key]: result },
         });
         return;
       }
       if (!hasMod(path, key)) {
         setItem(path, {
-          hash: newHash ?? await getFileHash(path),
-          mtime: newMtime ?? await getMtime(path),
+          mtime: newMtime || cacheFile[path]?.mtime || await getMtime(path)
         });
         setMod(path, key, result);
       }
@@ -136,5 +120,5 @@ export function createCache(cache: string) {
     };
   }
 
-  return { useCache, initCache, writeCache };
+  return { useCache, initCache, writeCache, changeRef };
 }

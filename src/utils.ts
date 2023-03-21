@@ -14,5 +14,6 @@ export function listLog(list: string[], color = gray) {
 const slash = mem((path: string) => path.replace(/\\/g, "/"));
 
 export function normalizePath(id: string) {
+  id = id.replace('\x00', '')
   return slash(id).split("?");
 }

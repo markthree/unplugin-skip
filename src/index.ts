@@ -14,6 +14,10 @@ interface Options {
   cache?: string;
 }
 
+function isVirtualOrAssets(id: string) {
+  return id.includes("assets") || (id.startsWith('\x00') && !id.includes('node_modules'))
+}
+
 export const unplugin = createUnplugin(
   (options: Options = {}) => {
     const { log = false, cache = DEFAULT_CACHE } = options;
@@ -26,7 +30,7 @@ export const unplugin = createUnplugin(
     const transformCacheCtx = createCache(TRANSFORM_CACHE);
 
     return {
-      name: "unplugin-skip:goalkeeper",
+      name: "unplugin-skip",
       enforce: "pre",
       vite: {
         apply: "build",
@@ -37,7 +41,7 @@ export const unplugin = createUnplugin(
           ]);
         },
         configResolved(config) {
-          config.plugins.forEach((plugin, index) => {
+          config.plugins.forEach(plugin => {
             // hask load
             if (plugin.load) {
               const handler = "handler" in plugin.load
@@ -52,10 +56,9 @@ export const unplugin = createUnplugin(
                   );
                 };
 
-                if (id.includes("assets") || id.startsWith('\x00')) {
+                if (isVirtualOrAssets(id)) {
                   return getNewResult();
                 }
-
 
                 const [path] = normalizePath(id);
 
@@ -64,7 +67,7 @@ export const unplugin = createUnplugin(
                 }
 
                 const { update, isChanged, hasResult, getResult } = loadCacheCtx
-                  .useCache(plugin, index, path, id);
+                  .useCache(plugin.name, path, id);
 
                 if (hasResult() && !(await isChanged())) {
                   if (log) {
@@ -75,7 +78,7 @@ export const unplugin = createUnplugin(
 
                 const newResult = await getNewResult();
 
-                await update(newResult);
+                update(newResult);
 
                 return newResult;
               };
@@ -103,7 +106,7 @@ export const unplugin = createUnplugin(
 
                 const [path] = normalizePath(id);
 
-                if (id.startsWith('\x00')) {
+                if (isVirtualOrAssets(id)) {
                   return getNewResult();
                 }
 
@@ -113,7 +116,7 @@ export const unplugin = createUnplugin(
 
 
                 const { update, isChanged, hasResult, getResult } = transformCacheCtx
-                  .useCache(plugin, index, path, id);
+                  .useCache(plugin.name, path, id);
 
                 if (hasResult() && !(await isChanged())) {
                   if (log) {
@@ -124,7 +127,7 @@ export const unplugin = createUnplugin(
 
                 const newResult = await getNewResult();
 
-                await update(newResult);
+                update(newResult);
 
                 return newResult;
               };
@@ -139,8 +142,8 @@ export const unplugin = createUnplugin(
           }
 
           await Promise.all([
-            loadCacheCtx.writeCache(),
-            transformCacheCtx.writeCache(),
+            loadCacheCtx.changeRef.value && loadCacheCtx.writeCache(),
+            loadCacheCtx.changeRef.value && transformCacheCtx.writeCache(),
           ]);
         },
       },
